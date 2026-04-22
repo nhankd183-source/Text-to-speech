@@ -1,115 +1,243 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TTS Studio – Text to Speech</title>
-  <link rel="stylesheet" href="/static/css/style.css" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>TTS Studio</title>
+  <link rel="stylesheet" href="/static/css/style.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 </head>
 <body>
 
-  <div class="bg-blob bg-blob--1"></div>
-  <div class="bg-blob bg-blob--2"></div>
+<!-- ══════════ SIDEBAR ══════════ -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <span class="brand-icon">🎙️</span>
+    <span class="brand-name">TTS Studio</span>
+  </div>
 
-  <div class="page">
+  <nav class="sidebar-nav">
+    <div class="nav-item active">
+      <span class="nav-ico">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
+      </span>
+      <span>Chuyển văn bản</span>
+    </div>
+    <div class="nav-item" onclick="toggleHistory()">
+      <span class="nav-ico">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+      </span>
+      <span>Lịch sử</span>
+      <span class="nav-badge" id="history-badge" style="display:none">0</span>
+    </div>
+  </nav>
 
-    <!-- ── Header ── -->
-    <header class="header">
-      <div class="logo">
-        <span class="logo-icon" aria-hidden="true">🎙️</span>
-        <div>
-          <h1 class="logo-title">TTS Studio</h1>
-          <p class="logo-sub">Powered by Microsoft Edge Neural Voices</p>
+  <div class="sidebar-footer">
+    <div class="sidebar-user">
+      <div class="user-avatar">N</div>
+      <div class="user-info">
+        <div class="user-name">Personal</div>
+        <div class="user-email">local user</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ══════════ MAIN ══════════ -->
+<div class="main">
+
+  <!-- ── Page header ── -->
+  <div class="page-header">
+    <div class="page-header-left">
+      <input class="doc-title" id="doc-title" value="Chưa có tiêu đề" placeholder="Chưa có tiêu đề"/>
+      <span class="save-status" id="save-status"></span>
+    </div>
+    <div class="page-header-right">
+      <span class="char-counter-top" id="char-top">0 ký tự</span>
+    </div>
+  </div>
+
+  <!-- ── Editor area ── -->
+  <div class="editor-area">
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+
+        <!-- Voice button -->
+        <button class="voice-btn" id="voice-btn" onclick="toggleVoicePanel()">
+          <div class="voice-avatar" id="va-icon">N</div>
+          <span class="voice-btn-name" id="va-name">Đang tải…</span>
+          <svg class="arrow-icon" viewBox="0 0 24 24" fill="currentColor"><path d="m8.71 11.71 2.59 2.59c.39.39 1.02.39 1.41 0l2.59-2.59c-.63-.63.18-1.71-.71-1.71H9.41c-.89 0-1.33 1.08-.7 1.71z"/></svg>
+        </button>
+
+        <div class="toolbar-divider"></div>
+
+        <!-- Speed -->
+        <div class="toolbar-control" title="Tốc độ đọc">
+          <svg class="ctrl-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19.46 10a1 1 0 0 0-.07 1 7.55 7.55 0 0 1 .52 1.81 8 8 0 0 1-.69 4.73 1 1 0 0 1-.89.53H5.68a1 1 0 0 1-.89-.54A8 8 0 0 1 13 6.06a7.69 7.69 0 0 1 2.11.56 1 1 0 0 0 1-.07 1 1 0 0 0-.17-1.76A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0 .55-8.89 1 1 0 0 0-1.75-.11z"/><path d="M10.59 12.59a2 2 0 0 0 2.83 2.83l5.66-8.49z"/></svg>
+          <select id="speed-select" class="toolbar-select" onchange="onSpeedChange()">
+            <option value="-50">0.5x</option>
+            <option value="-25">0.75x</option>
+            <option value="0" selected>1x</option>
+            <option value="25">1.25x</option>
+            <option value="50">1.5x</option>
+            <option value="75">1.75x</option>
+            <option value="100">2x</option>
+          </select>
+        </div>
+
+        <div class="toolbar-divider"></div>
+
+        <!-- Format (static MP3) -->
+        <div class="toolbar-control">
+          <svg class="ctrl-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-3 5h-2v5.37c0 1.27-.9 2.44-2.16 2.6-1.69.23-3.11-1.25-2.8-2.95.2-1.1 1.18-1.95 2.3-2.02.63-.04 1.2.16 1.66.51V6c0-.55.45-1 1-1h2c.55 0 1 .45 1 1s-.45 1-1 1zM3 6c-.55 0-1 .45-1 1v13c0 1.1.9 2 2 2h13c.55 0 1-.45 1-1s-.45-1-1-1H5c-.55 0-1-.45-1-1V7c0-.55-.45-1-1-1z"/></svg>
+          <span class="toolbar-label">mp3</span>
+        </div>
+
+      </div><!-- /toolbar-left -->
+    </div>
+    <!-- /Toolbar -->
+
+    <!-- Voice panel dropdown -->
+    <div class="voice-panel" id="voice-panel" style="display:none">
+      <div class="voice-panel-inner">
+        <div class="vp-row">
+          <div class="vp-field">
+            <label class="vp-label">Ngôn ngữ</label>
+            <select id="lang-select" onchange="onLanguageChange()" class="vp-select"></select>
+          </div>
+          <div class="vp-field vp-field--wide">
+            <label class="vp-label">Giọng đọc</label>
+            <select id="voice-select" class="vp-select" onchange="onVoiceSelectChange()"></select>
+          </div>
+          <button class="vp-apply" onclick="applyVoice()">Áp dụng</button>
         </div>
       </div>
-    </header>
+    </div>
 
-    <!-- ── Main card ── -->
-    <main class="card" role="main">
+    <!-- Text editor -->
+    <div class="editor-body">
+      <textarea
+        id="text-input"
+        class="editor-textarea"
+        placeholder="Nhập hoặc dán văn bản vào đây…"
+        spellcheck="false"
+      ></textarea>
+    </div>
 
-      <!-- Text area -->
-      <div class="field">
-        <div class="field__label-row">
-          <label for="text-input" class="label">Văn bản cần đọc</label>
-          <span class="hint">Ctrl+Enter để tạo nhanh</span>
-        </div>
-        <div class="textarea-wrap">
-          <textarea
-            id="text-input"
-            placeholder="Nhập hoặc dán văn bản vào đây…"
-            rows="6"
-            spellcheck="false"
-          ></textarea>
-          <span class="char-count">
-            <span id="char-current">0</span> ký tự
+    <!-- Bottom action bar -->
+    <div class="action-bar">
+      <div class="action-bar-left">
+        <button class="btn-preview" disabled id="preview-btn">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="16"><path d="M8 6.82v10.36c0 .79.87 1.27 1.54.84l8.14-5.18c.62-.39.62-1.29 0-1.69L9.54 5.98C8.87 5.55 8 6.03 8 6.82z"/></svg>
+          Nghe thử
+        </button>
+      </div>
+      <div class="action-bar-right">
+        <span class="char-info" id="char-info">
+          <span id="char-current">0</span>
+          <span class="char-sep">/∞</span>
+        </span>
+        <span class="duration-info" id="duration-info" style="display:none">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="14"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+          <span id="duration-val">00:00</span>
+        </span>
+        <button class="btn-generate" id="generate-btn" onclick="generateSpeech()">
+          <span id="btn-spinner" style="display:none">
+            <svg class="spin-icon" viewBox="0 0 24 24" fill="currentColor" width="16"><path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/></svg>
           </span>
-        </div>
+          <svg id="btn-play-icon" viewBox="0 0 24 24" fill="currentColor" width="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 13.5v-7c0-.41.47-.65.8-.4l4.67 3.5c.27.2.27.6 0 .8l-4.67 3.5c-.33.25-.8.01-.8-.4z"/></svg>
+          <span id="btn-label">Tạo audio</span>
+        </button>
       </div>
+    </div>
 
-      <!-- Language + Voice row -->
-      <div class="two-col">
-        <div class="field">
-          <label for="lang-select" class="label">Ngôn ngữ</label>
-          <div class="select-wrap">
-            <select id="lang-select" onchange="onLanguageChange()">
-              <option value="">Đang tải giọng đọc…</option>
-            </select>
+    <!-- Status message -->
+    <div id="status-msg" class="status-msg" style="display:none"></div>
+
+    <!-- Audio result -->
+    <div id="audio-result" class="audio-result" style="display:none">
+      <div class="ar-header">
+        <div class="ar-info">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="18" style="color:#7c3aed"><path d="M12 3v9.28a4.39 4.39 0 0 0-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z"/></svg>
+          <div>
+            <div class="ar-title" id="ar-title">Audio mới</div>
+            <div class="ar-sub" id="ar-sub"></div>
           </div>
         </div>
-        <div class="field">
-          <label for="voice-select" class="label">Giọng đọc</label>
-          <div class="select-wrap">
-            <select id="voice-select">
-              <option value="">Chọn ngôn ngữ trước</option>
-            </select>
-          </div>
-        </div>
+        <button class="btn-dl" onclick="downloadCurrent()">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="16"><path d="M16.59 9H15V4c0-.55-.45-1-1-1h-4c-.55 0-1 .45-1 1v5H7.41c-.89 0-1.34 1.08-.71 1.71l4.59 4.59c.39.39 1.02.39 1.41 0l4.59-4.59c.63-.63.19-1.71-.7-1.71zM5 19c0 .55.45 1 1 1h12c.55 0 1-.45 1-1s-.45-1-1-1H6c-.55 0-1 .45-1 1z"/></svg>
+          Tải xuống
+        </button>
       </div>
+      <audio id="audio-player" controls></audio>
+    </div>
 
-      <!-- Rate slider -->
-      <div class="field">
-        <div class="field__label-row">
-          <label for="rate-slider" class="label">Tốc độ đọc</label>
-          <span class="badge" id="rate-badge">Bình thường (0%)</span>
-        </div>
-        <div class="slider-row">
-          <span class="slider-side-label">Chậm</span>
-          <input type="range" id="rate-slider" min="-50" max="100" value="0" step="5" />
-          <span class="slider-side-label right">Nhanh</span>
-        </div>
+  </div><!-- /editor-area -->
+
+  <!-- ── History section ── -->
+  <div class="history-section" id="history-section">
+    <div class="history-head" onclick="toggleHistoryPanel()">
+      <div class="history-head-left">
+        <button class="collapse-btn" id="collapse-btn">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M8.12 9.29 12 13.17l3.88-3.88c.39-.39 1.02-.39 1.41 0 .39.39.39 1.02 0 1.41l-4.59 4.59c-.39.39-1.02.39-1.41 0L6.7 10.7a.9959.9959 0 0 1 0-1.41c.39-.38 1.03-.39 1.42 0z"/></svg>
+        </button>
+        <span class="history-head-title">Danh sách chuyển đổi</span>
       </div>
-
-      <!-- Generate button -->
-      <button id="generate-btn" class="btn-primary" onclick="generateSpeech()">
-        <span id="btn-icon" class="btn-icon" aria-hidden="true">▶</span>
-        <span id="btn-label">Tạo giọng nói</span>
-      </button>
-
-      <!-- Status banner -->
-      <div id="status" class="status status--hidden" role="status" aria-live="polite"></div>
-
-      <!-- Audio player -->
-      <div id="audio-section" class="audio-section audio-section--hidden">
-        <div class="audio-header">
-          <span class="audio-title">🎵 Kết quả</span>
-          <button class="btn-download" onclick="downloadAudio()">⬇ Tải về</button>
+      <div class="history-head-right" onclick="e=>e.stopPropagation()">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="14"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          <input type="text" id="search-input" placeholder="Tìm kiếm" oninput="renderHistory()"/>
         </div>
-        <audio id="audio-player" controls preload="auto"></audio>
+        <button class="icon-btn" onclick="loadHistory();event.stopPropagation()" title="Làm mới">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+        </button>
       </div>
+    </div>
 
-    </main>
+    <div class="history-body" id="history-body">
+      <div id="hist-loading" class="hist-placeholder">Đang tải lịch sử…</div>
+      <div id="hist-empty"   class="hist-placeholder" style="display:none">Chưa có audio nào được tạo.</div>
 
-    <footer class="footer">
-      <p>
-        400+ neural voices · Hỗ trợ tiếng Việt &amp; đa ngôn ngữ ·
-        <a href="https://github.com/rany2/edge-tts" target="_blank" rel="noopener">edge-tts</a>
-      </p>
-    </footer>
+      <table class="hist-table" id="hist-table" style="display:none">
+        <colgroup>
+          <col style="width:40px">
+          <col>
+          <col style="width:22%">
+          <col style="width:130px">
+        </colgroup>
+        <tbody id="hist-tbody"></tbody>
+      </table>
 
-  </div><!-- /page -->
+      <div class="hist-pagination" id="hist-pagination" style="display:none">
+        <span class="pagination-info" id="pagination-info"></span>
+        <button class="btn-load-more" onclick="loadMoreHistory()">Tải thêm</button>
+      </div>
+    </div>
+  </div>
 
-  <script src="/static/js/main.js"></script>
+</div><!-- /main -->
+
+<!-- ══════════ GLOBAL AUDIO PLAYER ══════════ -->
+<div class="global-player" id="global-player" style="display:none">
+  <div class="gp-left">
+    <div class="gp-avatar" id="gp-avatar">🎵</div>
+    <div class="gp-meta">
+      <div class="gp-title" id="gp-title">—</div>
+      <div class="gp-voice" id="gp-voice"></div>
+    </div>
+  </div>
+  <div class="gp-center">
+    <audio id="global-audio" controls></audio>
+  </div>
+  <div class="gp-right">
+    <button class="gp-dl" id="gp-dl" onclick="downloadGlobal()">⬇</button>
+    <button class="gp-close" onclick="closeGlobalPlayer()">✕</button>
+  </div>
+</div>
+
+<script src="/static/js/main.js"></script>
 </body>
 </html>
