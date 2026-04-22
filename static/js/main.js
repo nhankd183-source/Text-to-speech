@@ -4,7 +4,11 @@
 let voices        = [];
 let selectedVoice = { name: "vi-VN-HoaiMyNeural", display: "Hoai My", locale: "vi-VN", gender: "Female" };
 let currentUrl    = "";
+let currentText   = "";
+let currentRate   = 0;
 let currentHistId = "";
+let previewPlaying = false;
+let previewBlobUrl = "";
 let historyItems  = [];
 let historyTotal  = 0;
 let historySkip   = 0;
@@ -136,11 +140,84 @@ function initCharCounter() {
     const fmt = n.toLocaleString("vi-VN");
     document.getElementById("char-top").textContent = fmt + " ký tự";
     document.getElementById("char-current").textContent = fmt;
+    document.getElementById("preview-btn").disabled = n === 0;
   });
 }
 
 // ── Speed ─────────────────────────────────────────────────────────────────
 function onSpeedChange() {} // value read at generate time
+
+// ── Preview ───────────────────────────────────────────────────────────────
+async function previewSpeech() {
+  if (previewPlaying) { stopPreview(); return; }
+
+  const text = document.getElementById("text-input").value.trim();
+  if (!text) return;
+
+  const rate = parseInt(document.getElementById("speed-select").value, 10);
+  setPreviewState("loading");
+
+  try {
+    const res = await fetch("/api/preview", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ text, voice: selectedVoice.name, rate, volume: 0 }),
+    });
+    if (!res.ok) throw new Error("Lỗi tạo preview");
+
+    // For preview (short clip) wait for full blob so we can seek freely
+    const blob = await res.blob();
+    if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+    previewBlobUrl = URL.createObjectURL(blob);
+
+    const pa = document.getElementById("preview-audio");
+    pa.src = previewBlobUrl;
+    pa.play();
+    previewPlaying = true;
+    setPreviewState("playing");
+
+    pa.addEventListener("ended", () => {
+      previewPlaying = false;
+      setPreviewState("idle");
+    }, { once: true });
+
+  } catch (err) {
+    setPreviewState("idle");
+    showStatus("error", `✕ Preview lỗi: ${err.message}`);
+  }
+}
+
+function stopPreview() {
+  const pa = document.getElementById("preview-audio");
+  pa.pause();
+  pa.currentTime = 0;
+  previewPlaying = false;
+  setPreviewState("idle");
+}
+
+function setPreviewState(state) {
+  const btn   = document.getElementById("preview-btn");
+  const icon  = document.getElementById("preview-icon");
+  const stop  = document.getElementById("preview-stop-icon");
+  const label = document.getElementById("preview-label");
+
+  if (state === "loading") {
+    btn.disabled       = true;
+    icon.style.display = "none";
+    stop.style.display = "none";
+    label.textContent  = "Đang tạo…";
+  } else if (state === "playing") {
+    btn.disabled       = false;
+    icon.style.display = "none";
+    stop.style.display = "";
+    label.textContent  = "Dừng";
+  } else {
+    btn.disabled       = document.getElementById("text-input").value.length === 0;
+    icon.style.display = "";
+    stop.style.display = "none";
+    label.textContent  = "Nghe thử";
+  }
+}
 
 // ── Generate speech — streaming ───────────────────────────────────────────
 async function generateSpeech() {
@@ -150,6 +227,7 @@ async function generateSpeech() {
   if (!text) { showStatus("error", "Vui lòng nhập văn bản."); return; }
 
   closeVoicePanel();
+  stopPreview();
   setLoading(true);
   hideResult();
   showStatus("loading", "⏳ Đang kết nối…");
@@ -170,12 +248,17 @@ async function generateSpeech() {
     player.load();
 
     currentUrl    = data.file_url;   // available on disk after stream completes
+    currentText   = text;
+    currentRate   = rate;
     currentHistId = "";
+
+    const charStr  = data.chars.toLocaleString("vi-VN");
+    const voiceStr = shortName(selectedVoice.display);
 
     document.getElementById("ar-title").textContent =
       text.substring(0, 60) + (text.length > 60 ? "…" : "");
     document.getElementById("ar-sub").textContent =
-      `${data.chars.toLocaleString("vi-VN")} ký tự · ${shortName(selectedVoice.display)} · đang tạo…`;
+      `${charStr} ký tự · ${voiceStr} · đang tạo…`;
 
     showResult();
     showStatus("success", "🎵 Đang phát — âm thanh được tạo và phát đồng thời!");
@@ -183,21 +266,25 @@ async function generateSpeech() {
 
     player.play().catch(() => {});
 
-    // After audio finishes loading metadata, update duration display
-    player.addEventListener("loadedmetadata", () => {
-      const dur = formatDur(player.duration);
-      if (dur) {
-        document.getElementById("ar-sub").textContent =
-          `${data.chars.toLocaleString("vi-VN")} ký tự · ${shortName(selectedVoice.display)} · ${dur}`;
-        document.getElementById("duration-val").textContent = dur;
-        document.getElementById("duration-info").style.display = "flex";
-      }
-    }, { once: true });
-
-    // After audio ends: file is saved → refresh history
+    // After stream ends: switch player src to the saved static file so user can seek/replay
     player.addEventListener("ended", () => {
       fetchHistoryCount();
       if (historyOpen) { historySkip = 0; historyItems = []; fetchHistory(0, true); }
+
+      // File is saved ~instantly after stream closes — switch src for seekability
+      setTimeout(() => {
+        player.src = currentUrl;
+        player.load();
+        player.addEventListener("loadedmetadata", () => {
+          const dur = formatDur(player.duration);
+          if (dur) {
+            document.getElementById("ar-sub").textContent =
+              `${charStr} ký tự · ${voiceStr} · ${dur}`;
+            document.getElementById("duration-val").textContent = dur;
+            document.getElementById("duration-info").style.display = "flex";
+          }
+        }, { once: true });
+      }, 1000);
     }, { once: true });
 
     // Also refresh history after 5s (covers short texts that finish quickly)
@@ -212,10 +299,22 @@ async function generateSpeech() {
   }
 }
 
-function downloadCurrent() {
-  if (!currentUrl) return;
-  // File might still be saving — try download, browser will retry if not ready yet
-  triggerDl(currentUrl, `tts_${Date.now()}.mp3`);
+async function downloadCurrent() {
+  if (!currentText) return;
+  try {
+    // Step 1: reserve a download token (fast, <100ms)
+    const res  = await fetch("/api/prepare-download", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ text: currentText, voice: selectedVoice.name, rate: currentRate, volume: 0 }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "Lỗi không xác định");
+    // Step 2: navigate to the download URL — browser streams audio directly to disk
+    window.location.href = data.dl_url;
+  } catch (err) {
+    showStatus("error", `✕ Không thể tải xuống: ${err.message}`);
+  }
 }
 
 // ── History ───────────────────────────────────────────────────────────────
@@ -288,7 +387,7 @@ function buildRow(item) {
   const date   = relDate(item.created_at);
   const vname  = shortName(item.voice_name || item.voice_code || "");
   const vini   = vname.charAt(0).toUpperCase();
-  const canAct = done && avail;
+
 
   return `<tr id="row-${item._id}">
     <td class="td-check"><input type="checkbox" class="hist-check"/></td>
@@ -313,11 +412,11 @@ function buildRow(item) {
     <td class="td-actions">
       <div class="actions-group">
         <button class="act-btn" onclick="playFromHistory('${item._id}')"
-          title="Nghe" ${canAct ? "" : "disabled"}>
+          title="${avail ? 'Nghe' : 'Tạo lại và nghe'}" ${done ? "" : "disabled"}>
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 13.5v-7c0-.41.47-.65.8-.4l4.67 3.5c.27.2.27.6 0 .8l-4.67 3.5c-.33.25-.8.01-.8-.4z"/></svg>
         </button>
-        <button class="act-btn" onclick="dlHistory('${escHtml(item.file_url)}')"
-          title="Tải xuống" ${canAct ? "" : "disabled"}>
+        <button class="act-btn" onclick="dlHistory('${item._id}')"
+          title="Tải xuống" ${done ? "" : "disabled"}>
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.59 9H15V4c0-.55-.45-1-1-1h-4c-.55 0-1 .45-1 1v5H7.41c-.89 0-1.34 1.08-.71 1.71l4.59 4.59c.39.39 1.02.39 1.41 0l4.59-4.59c.63-.63.19-1.71-.7-1.71zM5 19c0 .55.45 1 1 1h12c.55 0 1-.45 1-1s-.45-1-1-1H6c-.55 0-1 .45-1 1z"/></svg>
         </button>
         <button class="act-btn danger" onclick="delHistory('${item._id}')" title="Xoá">
@@ -328,9 +427,9 @@ function buildRow(item) {
   </tr>`;
 }
 
-function playFromHistory(id) {
+async function playFromHistory(id) {
   const item = historyItems.find(i => i._id === id);
-  if (!item || !item.file_available) return;
+  if (!item) return;
 
   stopProgress();
   trackingId    = id;
@@ -341,12 +440,36 @@ function playFromHistory(id) {
   const ga = document.getElementById("global-audio");
   document.getElementById("gp-title").textContent = item.title;
   document.getElementById("gp-voice").textContent = shortName(item.voice_name || "");
-  globalDlUrl = item.file_url;
-  document.getElementById("gp-dl").title = "Tải xuống";
+  gp.style.display = "flex";
 
+  if (!item.file_available) {
+    // File expired on disk — regenerate via streaming using stored params
+    try {
+      const res  = await fetch("/api/prepare", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          text:   item.original_text,
+          voice:  item.voice_code,
+          rate:   parseRateStr(item.speed_rate),
+          volume: parseRateStr(item.volume_rate),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error);
+      globalDlUrl = data.file_url;
+      ga.src = data.stream_url;
+      ga.load();
+      ga.play().catch(() => {});
+    } catch (err) {
+      alert(`Không thể tạo lại audio: ${err.message}`);
+    }
+    return;
+  }
+
+  globalDlUrl = item.file_url;
   ga.src = item.file_url + "?t=" + Date.now();
   ga.load();
-  gp.style.display = "flex";
 
   fetch(`/api/progress/${id}`)
     .then(r => r.json())
@@ -361,7 +484,34 @@ function playFromHistory(id) {
     .catch(() => ga.play().catch(() => {}));
 }
 
-function dlHistory(url) { if (url) triggerDl(url, `tts_${Date.now()}.mp3`); }
+async function dlHistory(id) {
+  const item = historyItems.find(i => i._id === id);
+  if (!item) return;
+
+  if (item.file_available) {
+    triggerDl(item.file_url, `tts_${Date.now()}.mp3`);
+    return;
+  }
+
+  // File expired — regenerate as download using stored params
+  try {
+    const res  = await fetch("/api/prepare-download", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({
+        text:   item.original_text,
+        voice:  item.voice_code,
+        rate:   parseRateStr(item.speed_rate),
+        volume: parseRateStr(item.volume_rate),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error);
+    window.location.href = data.dl_url;
+  } catch (err) {
+    alert(`Không thể tải xuống: ${err.message}`);
+  }
+}
 function downloadGlobal() { if (globalDlUrl) triggerDl(globalDlUrl, `tts_${Date.now()}.mp3`); }
 
 async function delHistory(id) {
@@ -486,6 +636,11 @@ function triggerDl(url, name) {
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────
+function parseRateStr(s) { // "+10%" → 10, "-20%" → -20, null → 0
+  if (!s) return 0;
+  return parseInt(s.replace("%", ""), 10) || 0;
+}
+
 function formatDur(s) {
   if (!s || s <= 0) return "";
   return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;

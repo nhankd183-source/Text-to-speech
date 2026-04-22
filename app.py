@@ -426,6 +426,148 @@ def api_stream(token):
     return resp
 
 
+_dl_tokens: dict = {}
+_dl_tokens_lock = threading.Lock()
+
+
+@app.route("/api/preview", methods=["POST"])
+def api_preview():
+    """Stream a short preview (first sentence / ≤300 chars) without saving history."""
+    data   = request.get_json(silent=True) or {}
+    text   = (data.get("text") or "").strip()
+    voice  = data.get("voice", "vi-VN-HoaiMyNeural")
+    rate   = int(data.get("rate", 0))
+    volume = int(data.get("volume", 0))
+
+    if not text:
+        return jsonify({"error": "Vui lòng nhập văn bản."}), 400
+
+    # Take first sentence boundary within 50–300 chars, else hard-cut at 300
+    preview = text[:300]
+    for punct in [". ", "! ", "? ", ".\n", "!\n", "?\n"]:
+        idx = text.find(punct, 50)
+        if 50 <= idx < 300:
+            preview = text[:idx + 1]
+            break
+
+    rate_str = format_rate(rate)
+    vol_str  = format_rate(volume)
+    audio_q  = qmod.Queue()
+
+    async def produce():
+        try:
+            comm = edge_tts.Communicate(preview, voice, rate=rate_str, volume=vol_str)
+            async for item in comm.stream():
+                if item["type"] == "audio":
+                    audio_q.put(item["data"])
+        except Exception as exc:
+            print(f"[preview] error: {exc}")
+        finally:
+            audio_q.put(None)
+
+    threading.Thread(target=lambda: asyncio.run(produce()), daemon=True).start()
+
+    def generate():
+        while True:
+            try:
+                chunk = audio_q.get(timeout=30)
+            except qmod.Empty:
+                break
+            if chunk is None:
+                break
+            yield chunk
+
+    resp = Response(stream_with_context(generate()), mimetype="audio/mpeg")
+    resp.headers["Cache-Control"]     = "no-cache, no-store"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
+
+
+@app.route("/api/prepare-download", methods=["POST"])
+def api_prepare_download():
+    """Reserve a one-time download token — returns immediately (<50 ms)."""
+    data   = request.get_json(silent=True) or {}
+    text   = (data.get("text") or "").strip()
+    voice  = data.get("voice", "vi-VN-HoaiMyNeural")
+    rate   = int(data.get("rate", 0))
+    volume = int(data.get("volume", 0))
+
+    if not text:
+        return jsonify({"error": "Vui lòng nhập văn bản."}), 400
+
+    token = secrets.token_urlsafe(20)
+    with _dl_tokens_lock:
+        now_ts = time.time()
+        stale  = [k for k, v in _dl_tokens.items() if now_ts - v["ts"] > 300]
+        for k in stale:
+            del _dl_tokens[k]
+        _dl_tokens[token] = {"text": text, "voice": voice, "rate": rate,
+                             "volume": volume, "ts": now_ts}
+
+    return jsonify({"dl_url": f"/api/download/{token}"})
+
+
+@app.route("/api/download/<token>")
+def api_download(token):
+    """Stream MP3 as a browser download — audio generated as bytes arrive."""
+    with _dl_tokens_lock:
+        params = _dl_tokens.pop(token, None)
+
+    if not params:
+        return "Token không hợp lệ hoặc đã hết hạn.", 404
+
+    text     = params["text"]
+    voice    = params["voice"]
+    rate_str = format_rate(params["rate"])
+    vol_str  = format_rate(params["volume"])
+    chunks   = split_text(text, CHUNK_SIZE)
+    filename = f"tts_{uuid.uuid4().hex[:12]}.mp3"
+    filepath = os.path.join(GENERATED_DIR, filename)
+
+    audio_q = qmod.Queue()
+
+    async def produce():
+        buf = io.BytesIO()
+        try:
+            for chunk_text in chunks:
+                for attempt in range(3):
+                    try:
+                        comm = edge_tts.Communicate(chunk_text, voice, rate=rate_str, volume=vol_str)
+                        async for item in comm.stream():
+                            if item["type"] == "audio":
+                                buf.write(item["data"])
+                                audio_q.put(item["data"])
+                        break
+                    except Exception as exc:
+                        print(f"[download] chunk attempt {attempt+1} failed: {exc}")
+                        if attempt < 2:
+                            await asyncio.sleep(1.5)
+        except Exception as exc:
+            print(f"[download] synthesis error: {exc}")
+        finally:
+            audio_q.put(None)
+            _save_after_stream(buf, filepath, f"/static/generated/{filename}",
+                               filename, text, voice, rate_str, vol_str)
+
+    threading.Thread(target=lambda: asyncio.run(produce()), daemon=True).start()
+
+    def generate():
+        while True:
+            try:
+                chunk = audio_q.get(timeout=60)
+            except qmod.Empty:
+                break
+            if chunk is None:
+                break
+            yield chunk
+
+    resp = Response(stream_with_context(generate()), mimetype="audio/mpeg")
+    resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    resp.headers["Cache-Control"]       = "no-cache, no-store"
+    resp.headers["X-Accel-Buffering"]   = "no"
+    return resp
+
+
 def _save_after_stream(buf: io.BytesIO, filepath, file_url, filename, text, voice, rate_str, vol_str):
     """Write MP3 to disk and upsert MongoDB record (runs in background thread)."""
     try:
