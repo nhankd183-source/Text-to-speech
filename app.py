@@ -9,8 +9,11 @@ import threading
 import secrets
 import queue as qmod
 import io
+from functools import wraps
 from datetime import datetime, timezone
-from flask import Flask, render_template, request, jsonify, Response, stream_with_context
+from flask import (Flask, render_template, request, jsonify,
+                   Response, stream_with_context, session, redirect)
+from werkzeug.security import generate_password_hash, check_password_hash
 from pymongo import MongoClient, DESCENDING
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -29,6 +32,7 @@ except ImportError:
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "tts-studio-dev-secret-change-in-prod")
 
 GENERATED_DIR = os.path.join(app.static_folder, "generated")
 os.makedirs(GENERATED_DIR, exist_ok=True)
@@ -63,6 +67,26 @@ def col_history():
 
 def col_progress():
     return get_db()["audio_listening_progress"]
+
+
+def col_users():
+    return get_db()["users"]
+
+
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user_id" not in session:
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Chưa đăng nhập.", "code": "UNAUTHENTICATED"}), 401
+            return redirect("/login")
+        return f(*args, **kwargs)
+    return decorated
+
+
+def current_uid() -> str:
+    return session.get("user_id", "")
 
 
 # ── Fallback voices (used when Microsoft API is unavailable) ──────────────────
@@ -215,6 +239,9 @@ def serialize_doc(doc: dict) -> dict:
         if isinstance(v, ObjectId):
             result[k] = str(v)
         elif isinstance(v, datetime):
+            # pymongo trả về naive datetime (UTC) — thêm +00:00 để JS parse đúng múi giờ
+            if v.tzinfo is None:
+                v = v.replace(tzinfo=timezone.utc)
             result[k] = v.isoformat()
         else:
             result[k] = v
@@ -223,11 +250,103 @@ def serialize_doc(doc: dict) -> dict:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 @app.route("/")
+@login_required
 def index():
-    return render_template("index.html")
+    return render_template("index.html",
+                           username=session.get("username", ""),
+                           display_name=session.get("display_name", ""))
+
+
+@app.route("/history")
+@login_required
+def history_page():
+    return render_template("history.html",
+                           username=session.get("username", ""),
+                           display_name=session.get("display_name", ""))
+
+
+@app.route("/login")
+def login_page():
+    if "user_id" in session:
+        return redirect("/")
+    return render_template("login.html")
+
+
+@app.route("/api/register", methods=["POST"])
+def api_register():
+    data         = request.get_json(silent=True) or {}
+    username     = (data.get("username") or "").strip().lower()
+    password     = data.get("password") or ""
+    display_name = (data.get("display_name") or username).strip()
+
+    if len(username) < 3:
+        return jsonify({"error": "Tên đăng nhập phải có ít nhất 3 ký tự."}), 400
+    if not re.match(r'^[a-z0-9_\-]+$', username):
+        return jsonify({"error": "Tên đăng nhập chỉ dùng chữ thường, số, _ hoặc -."}), 400
+    if len(password) < 6:
+        return jsonify({"error": "Mật khẩu phải có ít nhất 6 ký tự."}), 400
+
+    try:
+        if col_users().find_one({"username": username}):
+            return jsonify({"error": "Tên đăng nhập đã tồn tại."}), 409
+        now = datetime.now(timezone.utc)
+        result = col_users().insert_one({
+            "username":      username,
+            "password_hash": generate_password_hash(password),
+            "display_name":  display_name,
+            "created_at":    now,
+            "last_login":    now,
+        })
+        user_id = str(result.inserted_id)
+        session["user_id"]      = user_id
+        session["username"]     = username
+        session["display_name"] = display_name
+        return jsonify({"ok": True, "username": username, "display_name": display_name})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    data     = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip().lower()
+    password = data.get("password") or ""
+
+    if not username or not password:
+        return jsonify({"error": "Vui lòng nhập đầy đủ thông tin."}), 400
+
+    try:
+        user = col_users().find_one({"username": username})
+        if not user or not check_password_hash(user["password_hash"], password):
+            return jsonify({"error": "Sai tên đăng nhập hoặc mật khẩu."}), 401
+        col_users().update_one({"_id": user["_id"]},
+                               {"$set": {"last_login": datetime.now(timezone.utc)}})
+        session["user_id"]      = str(user["_id"])
+        session["username"]     = user["username"]
+        session["display_name"] = user.get("display_name", user["username"])
+        return jsonify({"ok": True, "username": user["username"],
+                        "display_name": user.get("display_name", user["username"])})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/logout", methods=["POST"])
+def api_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/me")
+def api_me():
+    if "user_id" not in session:
+        return jsonify({"logged_in": False}), 401
+    return jsonify({"logged_in": True, "user_id": session["user_id"],
+                    "username": session["username"],
+                    "display_name": session.get("display_name", session["username"])})
 
 
 @app.route("/api/voices")
+@login_required
 def api_voices():
     try:
         v = get_voices()
@@ -238,6 +357,7 @@ def api_voices():
 
 
 @app.route("/api/generate", methods=["POST"])
+@login_required
 def api_generate():
     cleanup_old_files()
 
@@ -261,7 +381,7 @@ def api_generate():
 
     # Save "processing" record to MongoDB
     doc = {
-        "user_id":           "personal",
+        "user_id":           current_uid(),
         "title":             text[:80] + ("…" if len(text) > 80 else ""),
         "original_text":     text,
         "normalized_text":   text,
@@ -328,6 +448,7 @@ def api_generate():
 
 
 @app.route("/api/prepare", methods=["POST"])
+@login_required
 def api_prepare():
     """Reserve a streaming token. Returns token + stream URL immediately (<50 ms)."""
     cleanup_old_files()
@@ -355,7 +476,7 @@ def api_prepare():
 
         _stream_tokens[token] = {
             "text": text, "voice": voice, "rate": rate, "volume": volume,
-            "filename": filename, "ts": time.time(),
+            "filename": filename, "ts": time.time(), "user_id": current_uid(),
         }
 
     return jsonify({
@@ -380,6 +501,7 @@ def api_stream(token):
     rate_str = format_rate(params["rate"])
     vol_str  = format_rate(params["volume"])
     filename = params["filename"]
+    uid      = params.get("user_id", "")
     filepath = os.path.join(GENERATED_DIR, filename)
     file_url = f"/static/generated/{filename}"
     chunks   = split_text(text, CHUNK_SIZE)
@@ -406,7 +528,7 @@ def api_stream(token):
             print(f"[stream] synthesis error: {exc}")
         finally:
             audio_q.put(None)           # signal end
-            _save_after_stream(buf, filepath, file_url, filename, text, voice, rate_str, vol_str)
+            _save_after_stream(buf, filepath, file_url, filename, text, voice, rate_str, vol_str, uid)
 
     threading.Thread(target=lambda: asyncio.run(produce()), daemon=True).start()
 
@@ -431,6 +553,7 @@ _dl_tokens_lock = threading.Lock()
 
 
 @app.route("/api/preview", methods=["POST"])
+@login_required
 def api_preview():
     """Stream a short preview (first sentence / ≤300 chars) without saving history."""
     data   = request.get_json(silent=True) or {}
@@ -484,6 +607,7 @@ def api_preview():
 
 
 @app.route("/api/prepare-download", methods=["POST"])
+@login_required
 def api_prepare_download():
     """Reserve a one-time download token — returns immediately (<50 ms)."""
     data   = request.get_json(silent=True) or {}
@@ -502,7 +626,7 @@ def api_prepare_download():
         for k in stale:
             del _dl_tokens[k]
         _dl_tokens[token] = {"text": text, "voice": voice, "rate": rate,
-                             "volume": volume, "ts": now_ts}
+                             "volume": volume, "ts": now_ts, "user_id": current_uid()}
 
     return jsonify({"dl_url": f"/api/download/{token}"})
 
@@ -520,6 +644,7 @@ def api_download(token):
     voice    = params["voice"]
     rate_str = format_rate(params["rate"])
     vol_str  = format_rate(params["volume"])
+    uid      = params.get("user_id", "")
     chunks   = split_text(text, CHUNK_SIZE)
     filename = f"tts_{uuid.uuid4().hex[:12]}.mp3"
     filepath = os.path.join(GENERATED_DIR, filename)
@@ -547,7 +672,7 @@ def api_download(token):
         finally:
             audio_q.put(None)
             _save_after_stream(buf, filepath, f"/static/generated/{filename}",
-                               filename, text, voice, rate_str, vol_str)
+                               filename, text, voice, rate_str, vol_str, uid)
 
     threading.Thread(target=lambda: asyncio.run(produce()), daemon=True).start()
 
@@ -568,7 +693,7 @@ def api_download(token):
     return resp
 
 
-def _save_after_stream(buf: io.BytesIO, filepath, file_url, filename, text, voice, rate_str, vol_str):
+def _save_after_stream(buf: io.BytesIO, filepath, file_url, filename, text, voice, rate_str, vol_str, uid=""):
     """Write MP3 to disk and upsert MongoDB record (runs in background thread)."""
     try:
         audio_bytes = buf.getvalue()
@@ -584,7 +709,7 @@ def _save_after_stream(buf: io.BytesIO, filepath, file_url, filename, text, voic
         lang_code  = "-".join(voice.split("-")[:2])
 
         doc = {
-            "user_id":          "personal",
+            "user_id":          uid or "personal",
             "title":            text[:80] + ("…" if len(text) > 80 else ""),
             "original_text":    text,
             "normalized_text":  text,
@@ -612,11 +737,12 @@ def _save_after_stream(buf: io.BytesIO, filepath, file_url, filename, text, voic
 
 
 @app.route("/api/history")
+@login_required
 def api_history():
     try:
         skip  = int(request.args.get("skip", 0))
         limit = int(request.args.get("limit", 30))
-        query = {"deleted_at": None, "user_id": "personal"}
+        query = {"deleted_at": None, "user_id": current_uid()}
 
         docs  = list(col_history().find(query, sort=[("created_at", DESCENDING)],
                                         skip=skip, limit=limit))
@@ -633,6 +759,7 @@ def api_history():
 
 
 @app.route("/api/history/<history_id>", methods=["DELETE"])
+@login_required
 def api_history_delete(history_id: str):
     try:
         result = col_history().update_one(
@@ -647,15 +774,17 @@ def api_history_delete(history_id: str):
 
 
 @app.route("/api/progress/<history_id>", methods=["GET"])
+@login_required
 def api_progress_get(history_id: str):
     try:
-        doc = col_progress().find_one({"audio_history_id": history_id, "user_id": "personal"})
+        doc = col_progress().find_one({"audio_history_id": history_id, "user_id": current_uid()})
         return jsonify(serialize_doc(doc) if doc else {})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/api/progress/<history_id>", methods=["PUT"])
+@login_required
 def api_progress_update(history_id: str):
     try:
         data      = request.get_json(silent=True) or {}
@@ -677,12 +806,12 @@ def api_progress_update(history_id: str):
             update["completed_at"] = now
 
         col_progress().update_one(
-            {"audio_history_id": history_id, "user_id": "personal"},
+            {"audio_history_id": history_id, "user_id": current_uid()},
             {
                 "$set": update,
                 "$setOnInsert": {
                     "audio_history_id": history_id,
-                    "user_id":          "personal",
+                    "user_id":          current_uid(),
                     "created_at":       now,
                 },
             },

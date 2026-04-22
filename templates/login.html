@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Đăng nhập — TTS Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f3f4f6;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #111827;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.08), 0 1px 4px rgba(0,0,0,.05);
+      width: 100%;
+      max-width: 400px;
+      padding: 40px 36px 36px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+      justify-content: center;
+    }
+    .brand-icon { font-size: 28px; }
+    .brand-name { font-size: 20px; font-weight: 700; color: #7c3aed; }
+
+    .tabs {
+      display: flex;
+      border-bottom: 2px solid #e5e7eb;
+      margin-bottom: 24px;
+    }
+    .tab {
+      flex: 1;
+      padding: 10px;
+      text-align: center;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 14px;
+      color: #6b7280;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: color .15s, border-color .15s;
+    }
+    .tab.active { color: #7c3aed; border-bottom-color: #7c3aed; }
+
+    .form { display: flex; flex-direction: column; gap: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    label { font-size: 13px; font-weight: 500; color: #374151; }
+    input[type=text], input[type=password] {
+      padding: 10px 12px;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input:focus { border-color: #7c3aed; }
+
+    .btn-submit {
+      margin-top: 4px;
+      padding: 11px;
+      background: linear-gradient(135deg, #f59e0b, #f97316);
+      color: #fff;
+      font-weight: 600;
+      font-size: 14px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .btn-submit:hover { opacity: .9; }
+    .btn-submit:disabled { opacity: .6; cursor: not-allowed; }
+
+    .error-msg {
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 13px;
+      display: none;
+    }
+    .hint {
+      font-size: 12px;
+      color: #9ca3af;
+      margin-top: -8px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brand">
+    <span class="brand-icon">🎙️</span>
+    <span class="brand-name">TTS Studio</span>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" id="tab-login" onclick="switchTab('login')">Đăng nhập</div>
+    <div class="tab"        id="tab-register" onclick="switchTab('register')">Đăng ký</div>
+  </div>
+
+  <div id="error-msg" class="error-msg"></div>
+
+  <!-- Login form -->
+  <form id="form-login" class="form" onsubmit="doLogin(event)">
+    <div class="form-group">
+      <label>Tên đăng nhập</label>
+      <input type="text" id="login-username" placeholder="username" autocomplete="username" required/>
+    </div>
+    <div class="form-group">
+      <label>Mật khẩu</label>
+      <input type="password" id="login-password" placeholder="••••••" autocomplete="current-password" required/>
+    </div>
+    <button class="btn-submit" type="submit" id="btn-login">Đăng nhập</button>
+  </form>
+
+  <!-- Register form -->
+  <form id="form-register" class="form" style="display:none" onsubmit="doRegister(event)">
+    <div class="form-group">
+      <label>Tên đăng nhập</label>
+      <input type="text" id="reg-username" placeholder="vd: nhan_nguyen" autocomplete="username" required/>
+      <span class="hint">3–20 ký tự, chữ thường, số, _ hoặc -</span>
+    </div>
+    <div class="form-group">
+      <label>Tên hiển thị</label>
+      <input type="text" id="reg-display" placeholder="Nguyễn Văn A" autocomplete="name"/>
+    </div>
+    <div class="form-group">
+      <label>Mật khẩu</label>
+      <input type="password" id="reg-password" placeholder="Ít nhất 6 ký tự" autocomplete="new-password" required/>
+    </div>
+    <button class="btn-submit" type="submit" id="btn-register">Tạo tài khoản</button>
+  </form>
+</div>
+
+<script>
+"use strict";
+
+function switchTab(tab) {
+  document.getElementById("tab-login").classList.toggle("active", tab === "login");
+  document.getElementById("tab-register").classList.toggle("active", tab === "register");
+  document.getElementById("form-login").style.display    = tab === "login"    ? "" : "none";
+  document.getElementById("form-register").style.display = tab === "register" ? "" : "none";
+  hideError();
+}
+
+function showError(msg) {
+  const el = document.getElementById("error-msg");
+  el.textContent    = msg;
+  el.style.display  = "";
+}
+function hideError() {
+  document.getElementById("error-msg").style.display = "none";
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  hideError();
+  const btn      = document.getElementById("btn-login");
+  const username = document.getElementById("login-username").value.trim();
+  const password = document.getElementById("login-password").value;
+  btn.disabled   = true;
+  btn.textContent = "Đang đăng nhập…";
+  try {
+    const res  = await fetch("/api/login", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ username, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error || "Lỗi đăng nhập."); return; }
+    window.location.href = "/";
+  } catch (_) {
+    showError("Không thể kết nối đến server.");
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = "Đăng nhập";
+  }
+}
+
+async function doRegister(e) {
+  e.preventDefault();
+  hideError();
+  const btn          = document.getElementById("btn-register");
+  const username     = document.getElementById("reg-username").value.trim();
+  const display_name = document.getElementById("reg-display").value.trim();
+  const password     = document.getElementById("reg-password").value;
+  btn.disabled       = true;
+  btn.textContent    = "Đang tạo…";
+  try {
+    const res  = await fetch("/api/register", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ username, display_name, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error || "Lỗi đăng ký."); return; }
+    window.location.href = "/";
+  } catch (_) {
+    showError("Không thể kết nối đến server.");
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = "Tạo tài khoản";
+  }
+}
+</script>
+</body>
+</html>

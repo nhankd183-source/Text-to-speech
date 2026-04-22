@@ -23,6 +23,17 @@ let lastPos      = 0;
 let progressTimer= null;
 let globalDlUrl  = "";
 
+// ── Auth ──────────────────────────────────────────────────────────────────
+async function doLogout() {
+  await fetch("/api/logout", { method: "POST" }).catch(() => {});
+  window.location.href = "/login";
+}
+
+function handle401(res) {
+  if (res.status === 401) { window.location.href = "/login"; return true; }
+  return false;
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
   loadVoices();
@@ -45,6 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
 async function loadVoices() {
   try {
     const res  = await fetch("/api/voices");
+    if (handle401(res)) return;
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
@@ -196,26 +208,27 @@ function stopPreview() {
 }
 
 function setPreviewState(state) {
-  const btn   = document.getElementById("preview-btn");
-  const icon  = document.getElementById("preview-icon");
-  const stop  = document.getElementById("preview-stop-icon");
-  const label = document.getElementById("preview-label");
+  const btn  = document.getElementById("preview-btn");
+  if (!btn) return;
+  const icon = document.getElementById("preview-icon");
+  const stop = document.getElementById("preview-stop-icon");
+  const setLabel = t => { const el = document.getElementById("preview-label"); if (el) el.textContent = t; };
 
   if (state === "loading") {
-    btn.disabled       = true;
-    icon.style.display = "none";
-    stop.style.display = "none";
-    label.textContent  = "Đang tạo…";
+    btn.disabled = true;
+    if (icon) icon.style.display = "none";
+    if (stop) stop.style.display = "none";
+    setLabel("Đang tạo…");
   } else if (state === "playing") {
-    btn.disabled       = false;
-    icon.style.display = "none";
-    stop.style.display = "";
-    label.textContent  = "Dừng";
+    btn.disabled = false;
+    if (icon) icon.style.display = "none";
+    if (stop) stop.style.display = "";
+    setLabel("Dừng");
   } else {
-    btn.disabled       = document.getElementById("text-input").value.length === 0;
-    icon.style.display = "";
-    stop.style.display = "none";
-    label.textContent  = "Nghe thử";
+    btn.disabled = document.getElementById("text-input").value.length === 0;
+    if (icon) icon.style.display = "";
+    if (stop) stop.style.display = "none";
+    setLabel("Nghe thử");
   }
 }
 
@@ -239,6 +252,7 @@ async function generateSpeech() {
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ text, voice: selectedVoice.name, rate, volume: 0 }),
     });
+    if (handle401(res)) return;
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || "Lỗi không xác định.");
 
@@ -332,6 +346,7 @@ async function loadMoreHistory() { await fetchHistory(historySkip, false); }
 async function fetchHistory(skip, reset) {
   try {
     const res  = await fetch(`/api/history?skip=${skip}&limit=${LIMIT}`);
+    if (handle401(res)) return;
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     historyItems = reset ? data.items : [...historyItems, ...data.items];
@@ -379,9 +394,6 @@ function renderHistory() {
 function buildRow(item) {
   const avail  = item.file_available !== false;
   const done   = item.status === "completed";
-  const badge  = avail && done ? "completed" : !avail && done ? "expired" :
-                 item.status === "processing" ? "processing" : "failed";
-  const label  = {completed:"✓ Hoàn thành",expired:"⌛ Hết hạn",processing:"⏳ Đang tạo",failed:"✕ Lỗi"}[badge];
   const dur    = item.duration_seconds ? formatDur(item.duration_seconds) : "—";
   const chars  = (item.character_count || 0).toLocaleString("vi-VN");
   const date   = relDate(item.created_at);
@@ -528,9 +540,21 @@ async function delHistory(id) {
 }
 
 function toggleHistory() {
-  if (!historyOpen) { historyOpen = true; loadHistory(); }
-  // scroll to history
-  document.getElementById("history-section").scrollIntoView({ behavior: "smooth" });
+  // Mở panel nếu đang đóng
+  if (!historyOpen) {
+    historyOpen = true;
+    document.getElementById("history-body").classList.remove("collapsed");
+    document.getElementById("collapse-btn").classList.remove("collapsed");
+  }
+  // Luôn reload để lấy dữ liệu mới nhất
+  loadHistory();
+  // Scroll đến section lịch sử
+  const section = document.getElementById("history-section");
+  section.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  // Flash viền tím để báo hiệu điều hướng
+  section.style.outline = "2px solid #7c3aed";
+  section.style.borderRadius = "8px";
+  setTimeout(() => { section.style.outline = ""; section.style.borderRadius = ""; }, 900);
 }
 
 function toggleHistoryPanel() {

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Lịch sử — TTS Studio</title>
+  <link rel="stylesheet" href="/static/css/style.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    .history-page { padding: 24px 32px 100px; }
+    .history-page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .history-page-title { font-size: 1.2rem; font-weight: 700; color: var(--text); }
+    .history-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .search-box-lg {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px 12px;
+      background: var(--white);
+      width: 280px;
+    }
+    .search-box-lg input {
+      border: none;
+      outline: none;
+      font-size: 13px;
+      font-family: inherit;
+      background: none;
+      flex: 1;
+      color: var(--text);
+    }
+    .history-full-body { background: var(--white); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; }
+    .hist-full-table { width: 100%; border-collapse: collapse; }
+    .hist-full-table th {
+      text-align: left;
+      padding: 10px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-2);
+      border-bottom: 1px solid var(--border);
+      background: var(--border-2);
+    }
+    .hist-full-table td { padding: 12px 14px; border-bottom: 1px solid var(--border-2); vertical-align: middle; }
+    .hist-full-table tr:last-child td { border-bottom: none; }
+    .hist-full-table tr:hover td { background: #fafafa; }
+
+    .load-more-bar { display: flex; align-items: center; justify-content: center; padding: 16px; gap: 12px; }
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--text-3); font-size: 14px; }
+    .empty-state svg { width: 48px; height: 48px; opacity: .3; margin-bottom: 12px; }
+
+    .stat-chips { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .stat-chip {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 16px;
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 120px;
+    }
+    .stat-chip-val { font-size: 1.4rem; font-weight: 700; color: var(--purple); }
+    .stat-chip-label { color: var(--text-2); font-size: 11px; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════ SIDEBAR ══════════ -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <span class="brand-icon">🎙️</span>
+    <span class="brand-name">TTS Studio</span>
+  </div>
+
+  <nav class="sidebar-nav">
+    <a class="nav-item" href="/">
+      <span class="nav-ico">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
+      </span>
+      <span>Chuyển văn bản</span>
+    </a>
+    <a class="nav-item active" href="/history">
+      <span class="nav-ico">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+      </span>
+      <span>Lịch sử</span>
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="sidebar-user">
+      <div class="user-avatar">{{ (display_name or username or 'U')[0].upper() }}</div>
+      <div class="user-info">
+        <div class="user-name">{{ display_name or username }}</div>
+        <div class="user-email">@{{ username }}</div>
+      </div>
+    </div>
+    <button class="sidebar-logout" onclick="doLogout()" title="Đăng xuất">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+    </button>
+  </div>
+</aside>
+
+<!-- ══════════ MAIN ══════════ -->
+<div class="main">
+  <div class="history-page">
+
+    <div class="history-page-header">
+      <div class="history-page-title">Lịch sử chuyển đổi</div>
+      <div class="history-toolbar">
+        <div class="search-box-lg">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="14" style="color:var(--text-3)"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          <input type="text" id="search-input" placeholder="Tìm kiếm tên, giọng đọc…" oninput="onSearch()"/>
+        </div>
+        <button class="icon-btn" onclick="reload()" title="Làm mới">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Stat chips -->
+    <div class="stat-chips" id="stat-chips" style="display:none">
+      <div class="stat-chip"><span class="stat-chip-val" id="stat-total">0</span><span class="stat-chip-label">Tổng audio</span></div>
+      <div class="stat-chip"><span class="stat-chip-val" id="stat-chars">0</span><span class="stat-chip-label">Tổng ký tự</span></div>
+      <div class="stat-chip"><span class="stat-chip-val" id="stat-dur">0</span><span class="stat-chip-label">Tổng thời lượng</span></div>
+    </div>
+
+    <!-- Table -->
+    <div class="history-full-body">
+      <div id="hist-loading" style="padding:40px;text-align:center;color:var(--text-3)">Đang tải…</div>
+      <div id="hist-empty" class="empty-state" style="display:none">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+        <div>Chưa có audio nào được tạo.</div>
+      </div>
+
+      <table class="hist-full-table" id="hist-table" style="display:none">
+        <thead>
+          <tr>
+            <th style="width:40px"><input type="checkbox" id="check-all" onchange="toggleCheckAll(this)"/></th>
+            <th>Tiêu đề</th>
+            <th style="width:20%">Giọng đọc</th>
+            <th style="width:130px">Hành động</th>
+          </tr>
+        </thead>
+        <tbody id="hist-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div id="hist-pagination" class="load-more-bar" style="display:none">
+      <span id="pagination-info" style="font-size:13px;color:var(--text-2)"></span>
+      <button class="btn-load-more" onclick="loadMore()">Tải thêm</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════ GLOBAL AUDIO PLAYER ══════════ -->
+<div class="global-player" id="global-player" style="display:none">
+  <div class="gp-left">
+    <div class="gp-avatar" id="gp-avatar">🎵</div>
+    <div class="gp-meta">
+      <div class="gp-title" id="gp-title">—</div>
+      <div class="gp-voice" id="gp-voice"></div>
+    </div>
+  </div>
+  <div class="gp-center">
+    <audio id="global-audio" controls></audio>
+  </div>
+  <div class="gp-right">
+    <button class="gp-dl" id="gp-dl" onclick="downloadGlobal()">⬇</button>
+    <button class="gp-close" onclick="closeGlobalPlayer()">✕</button>
+  </div>
+</div>
+
+<script src="/static/js/history.js"></script>
+</body>
+</html>

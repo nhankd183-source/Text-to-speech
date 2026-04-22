@@ -24,23 +24,26 @@
       </span>
       <span>Chuyển văn bản</span>
     </div>
-    <div class="nav-item" onclick="toggleHistory()">
+    <a class="nav-item" href="/history">
       <span class="nav-ico">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
       </span>
       <span>Lịch sử</span>
       <span class="nav-badge" id="history-badge" style="display:none">0</span>
-    </div>
+    </a>
   </nav>
 
   <div class="sidebar-footer">
     <div class="sidebar-user">
-      <div class="user-avatar">N</div>
+      <div class="user-avatar">{{ (display_name or username or 'U')[0].upper() }}</div>
       <div class="user-info">
-        <div class="user-name">Personal</div>
-        <div class="user-email">local user</div>
+        <div class="user-name">{{ display_name or username }}</div>
+        <div class="user-email">@{{ username }}</div>
       </div>
     </div>
+    <button class="sidebar-logout" onclick="doLogout()" title="Đăng xuất">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+    </button>
   </div>
 </aside>
 

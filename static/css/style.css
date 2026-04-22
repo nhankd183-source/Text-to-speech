@@ -105,6 +105,7 @@ html, body {
   position: relative;
 }
 
+a.nav-item { text-decoration: none; }
 .nav-item:hover { background: var(--border-2); color: var(--text); }
 
 .nav-item.active {
@@ -139,7 +140,25 @@ html, body {
   border-top: 1px solid var(--border);
   padding: .75rem 1rem;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
 }
+
+.sidebar-logout {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  transition: color var(--tr), background var(--tr);
+}
+.sidebar-logout:hover { color: var(--error); background: #fef2f2; }
 
 .sidebar-user {
   display: flex;
